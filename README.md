@@ -7,13 +7,7 @@ The ZRU JS SDK provides seamless integration with the ZRU API, enabling develope
 
 ## Installation
 
-You can install using bower:
-
-```bash
-bower install zru-js
-```
-    
-or install using npm:
+You can install using npm:
 
 ```bash
 npm install zru-js
