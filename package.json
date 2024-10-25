@@ -1,0 +1,23 @@
+{
+  "name": "zru-js",
+  "version": "1.0.0",
+  "description": "JS library for the ZRU API.",
+  "keywords": [
+    "zru", 
+    "mychoice2pay",
+    "mc2p",
+    "rest",
+    "sdk",
+    "api",
+    "payments"
+  ],
+  "homepage": "https://www.zrupay.com",
+  "author": "ZRU",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/zrupay/zru-js.git"
+  },
+  "bugs:": "https://github.com/zrupay/zru-js/issues",
+  "main": "dist/zru.min.js",
+  "license": "MIT"
+}

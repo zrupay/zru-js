@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Example ZRU JS Library</title>
+        <!-- Import the ZRU library -->
+        <script src="../src/zru.js"></script>
+        <style>
+            /* Styles for the container holding the payment buttons */
+            #gateways {
+                display: flex;
+                flex-direction: column;
+            }
+
+            /* Styles for Google Pay and Apple Pay buttons */
+            #google-pay, #apple-pay {
+                margin: 5px;
+                cursor: pointer;
+                width: 150px;
+            }
+            #google-pay {
+                height: 22.5px;
+            }
+
+            /* Styles for gateways buttons */
+            button {
+                width: 150px;
+                margin: 5px;
+                padding: 5px 10px;
+                text-align: left;
+                border: 1px solid #dce0eb;
+                color: #546e7a;
+                border-radius: 5px;
+                background-color: #fff;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 5px;
+            }
+
+            /* Apple Pay button styles */
+            .apple-pay-button {
+                display: inline-block;
+                -webkit-appearance: -apple-pay-button;
+            }
+            .apple-pay-button-black {
+                -apple-pay-button-style: black;
+            }
+            .apple-pay-button-white {
+                -apple-pay-button-style: white;
+            }
+            .apple-pay-button-white-with-line {
+                -apple-pay-button-style: white-outline;
+            }
+        </style>
+    </head>
+    <body>
+        <!-- Google Pay Script: loaded asynchronously, triggers onLoadScriptGoogle once it's loaded -->
+        <script
+        async
+        src="https://pay.google.com/gp/p/js/pay.js"
+        onload="onLoadScriptGoogle()">
+        </script>
+
+       <!-- Apple Pay and Google Pay Buttons -->
+        <div id="apple-pay" class="apple-pay-button" onclick="startApplePay()"></div>
+        <div id="google-pay" onclick="startGooglePay()">
+            <img src="https://developers.google.com/static/pay/api/images/brand-guidelines/plain-button-white-pill-shape.png" width="100%">
+        </div>
+
+        <!-- Gateway div to dynamically add payment buttons -->
+        <div id="gateways"></div>
+
+        <!-- Div and iframe used by the ZRU library -->
+        <div id="zru-html-div" style="display: none"></div>
+        <iframe src="" frameborder="0" id="zru-iframe" style="display: none; width: 100%; height: 600px;"></iframe>
+
+        <script>
+            var zru = new ZRU(
+                '3992bbb4be93', // Public key
+                {
+                    iframeId: 'zru-iframe', // Default is 'zru-iframe'. ID of the iframe where the payment page will load, required if you choose the iframe option for apmOpenType or have a card payment option
+                    htmlDivId: 'zru-html-div', // Default is 'zru-html-div'. ID of the div where the payment form will load if you choose the html option for apmOpenType
+
+                    // apmOpenType: Specifies how the payment page will open. 
+                    // Possible values:
+                    // 'redirect': Redirects the user to the payment page of the gateway.
+                    // 'html': Include the payment form directly on this page and submit it to redirects the user to the payment page of the gateway without pass for our payment page.
+                    // 'iframe': Loads the payment page inside the iframe (some payment gateways may not support this), keeping the user on this page.
+                    // 'window': Opens a window with the payment page, keeping the user on this page.
+                    apmOpenType: 'redirect', // Default is 'redirect'. Change it depending on how you want the user to interact with the payment page.
+
+                    // apmSettings: Allows you to configure different settings for each payment gateway.
+                    // This object can include settings such as apmOpenType for specific gateways. 
+                    // Example: { 'PPI': 'html' } to use the 'html' option for the PayPal gateway.
+                    apmSettings: {},
+
+                    // windowsClosedCallback: A callback function that triggers when the payment window is closed if using 'window' as apmOpenType.
+                    // This can be useful for handling cases where the user closes the window without completing the payment.
+                    windowsClosedCallback: undefined,
+                    
+                    // windowsCompletedCallback: A callback that is triggered when the payment is successfully completed using the 'window' option.
+                    // Useful to perform actions such as redirecting the user or displaying a confirmation message.
+                    windowsCompletedCallback: undefined,
+                }
+            );
+
+            // Set the transaction, subscription, or authorization token to be used in this payment session.
+            zru.setToken('ed83895d7ed24720aed773a0881368df');
+
+            // Check if the browser supports Apple Pay. If not, you must hide the Apple Pay button.
+            if (!zru.canUseApplePay()) {
+                console.log('Apple Pay not supported');
+                document.getElementById('apple-pay').setAttribute('style', 'display: none;');
+            }
+
+            function onLoadScriptGoogle() {
+                // Check if the browser supports Google Pay. If not, you must hide the Google Pay button.
+                if (!zru.canUseGooglePay()) {
+                    console.log('Google Pay not supported');
+                    document.getElementById('google-pay').setAttribute('style', 'display: none;');
+                }
+            }
+
+            startApplePay = function () {
+                // Start the Apple Pay payment process
+                zru.startApplePay().then(function (result) {
+                    // Handle the payment result here
+                    console.log(result);
+                }).catch(function (error) {
+                    // Handle any errors during the payment process
+                    console.log(error);
+                })
+            }
+
+            startGooglePay = function () {
+                // Start the Google Pay payment process
+                zru.startGooglePay().then(function (result) {
+                    // If Google Pay returns only partial card details (PAN and expiration date), 
+                    // the ZRU library will request the CVV and return a promise to notified when the payment process is completed.
+                    if (result.completed) {
+                        result.completed.then(function (result) {
+                            console.log(result);
+                        });
+                    }
+                    console.log(result);
+                }).catch(function (error) {
+                    // Handle any errors during the payment process
+                    console.log(error);
+                })
+            }
+
+            // Get the available gateways for the current token
+            var gateways = zru.getGateways();
+            gateways.forEach(function (gateway) {
+                // Create a button dynamically for each gateway returned by the getGateways function
+                var button = document.createElement('button');
+                button.innerHTML = "<img width=35px height=35px src=" + gateway.image + ">" + gateway.name;
+                document.getElementById('gateways').appendChild(button);
+
+                // When the button is clicked, select the corresponding gateway for the payment
+                button.onclick = function () {
+                    zru.selectGateway(gateway.code);
+                };
+            });
+        </script>
+    </body>
+</html>
