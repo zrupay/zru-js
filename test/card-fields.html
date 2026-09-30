@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Example ZRU JS Card Fields</title>
+        <!-- Import the ZRU library -->
+        <script src="../src/zru.js"></script>
+        <style>
+            .field {
+                height: 70px;
+                width: 320px;
+                margin: 5px 0;
+            }
+            .error {
+                color: #d32f2f;
+                font-size: 12px;
+            }
+        </style>
+    </head>
+    <body>
+        <!-- Containers where the ZRU card field iframes are mounted -->
+        <div id="zru-number" class="field"></div>
+        <div id="number-error" class="error"></div>
+        <div id="zru-expiry" class="field"></div>
+        <div id="expiry-error" class="error"></div>
+        <div id="zru-cvc" class="field"></div>
+        <div id="cvc-error" class="error"></div>
+        <div id="zru-name" class="field"></div>
+        <div id="name-error" class="error"></div>
+
+        <button id="pay-btn">Pay</button>
+        <pre id="result"></pre>
+        <div id="three-ds"></div>
+
+        <script>
+            var zru = new ZRU(
+                '3992bbb4be93', // Public key
+                {
+                    // Point to a local checkout while developing, e.g. 'http://localhost:4213/'
+                    // payUrl: 'http://localhost:4213/',
+                    // API used by setToken; must be the same one the checkout points to
+                    // apiUrl: 'http://localhost:8000/v1/',
+                }
+            );
+            zru.setToken('TOKEN');
+
+            var fields = zru.createCardFields({
+                fields: {
+                    number: '#zru-number',
+                    expiry: '#zru-expiry',
+                    cvc: '#zru-cvc',
+                    name: '#zru-name',
+                }
+            });
+
+            fields.on('change', function (event) {
+                document.getElementById(event.field + '-error').textContent = event.valid ? '' : event.error;
+            });
+
+            document.getElementById('pay-btn').addEventListener('click', function () {
+                fields.submit().then(function (result) {
+                    document.getElementById('result').textContent = JSON.stringify(result, null, 2);
+                    if (result.html) {
+                        document.getElementById('three-ds').innerHTML = result.html;
+                    }
+                });
+            });
+        </script>
+    </body>
+</html>

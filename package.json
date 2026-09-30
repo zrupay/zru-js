@@ -3,7 +3,7 @@
   "version": "1.0.1",
   "description": "JS library for the ZRU API.",
   "keywords": [
-    "zru", 
+    "zru",
     "mychoice2pay",
     "mc2p",
     "rest",
@@ -19,5 +19,11 @@
   },
   "bugs:": "https://github.com/zrupay/zru-js/issues",
   "main": "dist/zru.min.js",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "terser": "^5.51.2"
+  },
+  "scripts": {
+    "build": "terser src/zru.js --compress --mangle --output dist/zru.min.js"
+  }
 }

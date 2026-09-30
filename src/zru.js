@@ -7,7 +7,10 @@
 
   var ZRU = function(publicKey, customOptions) {
     this.publicKey = publicKey;
-    this.PAY_URL = 'https://pay.mychoice2pay.com/';
+    this.PAY_URL = (customOptions && customOptions.payUrl) || 'https://checkout.zrupay.com/';
+    // event.origin never has a trailing slash
+    this.PAY_ORIGIN = this.PAY_URL.replace(/\/$/, '');
+    this.BASE_API_URL = (customOptions && customOptions.apiUrl) || 'https://api.zrupay.com/v1/';
     this.token = null;
     this.tokenInfo = null;
     this.tokenCardGateway = null;
@@ -25,7 +28,8 @@
       apmOpenType: (customOptions && customOptions.apmOpenType) || 'redirect',
       apmSettings: (customOptions && customOptions.apmSettings) || {},
       windowsClosedCallback: (customOptions && customOptions.windowsClosedCallback) || undefined,
-      windowsFinishedCallback: (customOptions && customOptions.windowsFinishedCallback) || undefined
+      // windowsCompletedCallback kept as alias: it's the name documented in the README
+      windowsFinishedCallback: (customOptions && (customOptions.windowsFinishedCallback || customOptions.windowsCompletedCallback)) || undefined
     };
 
     this.__hideId(this.options.iframeId);
@@ -54,7 +58,7 @@
   };
 
   ZRU.prototype.__defineUrls = function (token) {
-    this.API_URL = 'https://api.zrupay.com/v1/pay/' + this.token + '/';
+    this.API_URL = this.BASE_API_URL + 'pay/' + this.token + '/';
     this.API_HTML_URL = this.API_URL + 'html/';
     this.API_CARD_URL = this.API_URL + 'card/';
     this.REDIRECT_URL = this.PAY_URL + this.token + '/redirect/';
@@ -217,7 +221,7 @@
             }, 500);
             window.addEventListener('message', function (event) {
               if (event.data == 'MC2P_DONE' || event.data == 'MC2P_CANCEL' || event.data == 'MC2P_EXPIRED' || event.data == 'ZRU_DONE' || event.data == 'ZRU_CANCEL' || event.data == 'ZRU_EXPIRED') {
-                if (event.origin == zru.PAY_URL) {
+                if (event.origin == zru.PAY_ORIGIN) {
                   clearInterval(closedTimer);
                   wnd.close();
                   if (zru.options.windowsFinishedCallback) {
@@ -233,6 +237,206 @@
             });
         }
     }
+  };
+
+  // Card Fields Public
+
+  /**
+   * Mounts each card field in its own iframe served by the checkout.
+   * Card data never reaches this page: the field iframes send it to each other directly.
+   *
+   * var fields = zru.createCardFields({
+   *   fields: { number: '#zru-number', expiry: '#zru-expiry', cvc: '#zru-cvc', name: '#zru-name' }
+   * });
+   * fields.on('change', function (e) {});  // e.field, e.valid, e.error
+   * fields.submit().then(function (result) {});  // result.success, result.html (3DS), result.error, result.messages
+   */
+  ZRU.prototype.createCardFields = function (options) {
+    this.__checkIfToken();
+
+    var FIELD_NAMES = ['number', 'expiry', 'cvc', 'name'];
+    var REQUIRED_FIELDS = ['number', 'expiry', 'cvc'];
+    var zru = this;
+    var fieldsOptions = (options && options.fields) || {};
+    var iframes = {};
+    var readyFields = {};
+    var eventListeners = {};
+    var pendingResolve = null;
+
+    REQUIRED_FIELDS.forEach(function (field) {
+      if (!fieldsOptions[field]) {
+        throw new Error('createCardFields: field "' + field + '" is required');
+      }
+    });
+
+    FIELD_NAMES.forEach(function (field) {
+      var selector = fieldsOptions[field];
+      if (!selector) {
+        return;
+      }
+      var container = typeof selector === 'string' ? document.querySelector(selector) : selector;
+      if (!container) {
+        throw new Error('createCardFields: container not found for field "' + field + '"');
+      }
+
+      var iframe = document.createElement('iframe');
+      iframe.src = zru.PAY_URL + zru.token + '/field/' + field;
+      iframe.title = field;
+      iframe.style.width = '100%';
+      iframe.style.height = '100%';
+      iframe.style.border = 'none';
+      iframe.setAttribute('frameborder', '0');
+      iframe.setAttribute('scrolling', 'no');
+
+      container.appendChild(iframe);
+      iframes[field] = iframe;
+    });
+
+    function isFromOwnIframe(source) {
+      for (var field in iframes) {
+        if (iframes[field].contentWindow === source) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function emit(event, payload) {
+      (eventListeners[event] || []).forEach(function (handler) {
+        handler(payload);
+      });
+    }
+
+    function resolvePending(result) {
+      if (pendingResolve) {
+        var resolve = pendingResolve;
+        pendingResolve = null;
+        resolve(result);
+      }
+    }
+
+    function postToField(field, message) {
+      if (iframes[field]) {
+        iframes[field].contentWindow.postMessage(message, zru.PAY_ORIGIN);
+      }
+    }
+
+    function postToAll(message) {
+      for (var field in iframes) {
+        postToField(field, message);
+      }
+    }
+
+    function onMessage(event) {
+      if (event.origin !== zru.PAY_ORIGIN || !isFromOwnIframe(event.source)) {
+        return;
+      }
+      var data = event.data;
+      if (!data || typeof data !== 'object') {
+        return;
+      }
+
+      switch (data.type) {
+        case 'ZRU_FIELD_READY':
+          readyFields[data.field] = true;
+          if (cardFields.isReady()) {
+            emit('ready', {});
+          }
+          break;
+        case 'ZRU_FIELD_VALID':
+          emit('change', {field: data.field, valid: true, error: null});
+          break;
+        case 'ZRU_FIELD_ERROR':
+          emit('change', {field: data.field, valid: false, error: data.error});
+          break;
+        case 'ZRU_PAYMENT_OK':
+          resolvePending({success: true});
+          break;
+        case 'ZRU_3DS_REQUIRED':
+          resolvePending({success: false, html: data.html});
+          break;
+        case 'ZRU_PAYMENT_ERROR':
+          resolvePending({success: false, error: data.error_code, messages: data.messages});
+          break;
+      }
+    }
+
+    window.addEventListener('message', onMessage);
+
+    var cardFields = {
+      /**
+       * Pays with the card entered in the fields.
+       * gatewayCode defaults to the token's card gateway.
+       * Returns a Promise; callback is optional.
+       */
+      submit: function (gatewayCode, paymentScreenAccountId, callback) {
+        return new Promise(function (resolve) {
+          var done = function (result) {
+            if (callback) {
+              callback(result);
+            }
+            resolve(result);
+          };
+
+          if (pendingResolve) {
+            done({success: false, error: 'SUBMIT_IN_PROGRESS'});
+            return;
+          }
+          var code = gatewayCode || (zru.tokenCardGateway && zru.tokenCardGateway.code);
+          if (!code) {
+            done({success: false, error: 'GATEWAY_NOT_FOUND'});
+            return;
+          }
+
+          pendingResolve = done;
+          postToAll({
+            type: 'ZRU_SUBMIT',
+            gateway_code: code,
+            payment_screen_account_id: paymentScreenAccountId || undefined,
+            fields: Object.keys(iframes)
+          });
+        });
+      },
+
+      // Events: 'change' ({field, valid, error}) and 'ready' (all fields loaded)
+      on: function (event, handler) {
+        if (!eventListeners[event]) {
+          eventListeners[event] = [];
+        }
+        eventListeners[event].push(handler);
+        return this;
+      },
+
+      focus: function (field) {
+        postToField(field, {type: 'ZRU_FOCUS'});
+      },
+
+      clear: function (field) {
+        postToField(field, {type: 'ZRU_CLEAR'});
+      },
+
+      isReady: function () {
+        return Object.keys(iframes).every(function (field) {
+          return readyFields[field];
+        });
+      },
+
+      destroy: function () {
+        window.removeEventListener('message', onMessage);
+        for (var field in iframes) {
+          var iframe = iframes[field];
+          if (iframe.parentNode) {
+            iframe.parentNode.removeChild(iframe);
+          }
+        }
+        iframes = {};
+        readyFields = {};
+        eventListeners = {};
+        resolvePending({success: false, error: 'DESTROYED'});
+      }
+    };
+
+    return cardFields;
   };
 
   // Apple Pay Private

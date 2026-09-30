@@ -47,9 +47,10 @@ var zru = new ZRU(
     // This can be useful for handling cases where the user closes the window without completing the payment.
     windowsClosedCallback: undefined,
     
-    // windowsCompletedCallback: A callback that is triggered when the payment is successfully completed using the 'window' option.
-    // Useful to perform actions such as redirecting the user or displaying a confirmation message.
-    windowsCompletedCallback: undefined,
+    // windowsFinishedCallback: A callback that is triggered when the payment finishes using the 'window' option.
+    // Receives { done, cancel, expired, gateway }. Useful to perform actions such as redirecting the user or displaying a confirmation message.
+    // windowsCompletedCallback is also accepted as an alias.
+    windowsFinishedCallback: undefined,
   }
 );
 ```
@@ -79,6 +80,72 @@ gateways.forEach(function (gateway) {
     };
 });
 ```
+
+### Card fields in separate iframes
+
+Mount each card field in your own layout. Every field is an iframe served by ZRU, so card data never touches your page.
+
+```HTML
+<div id="zru-number"></div>
+<div id="zru-expiry"></div>
+<div id="zru-cvc"></div>
+<div id="zru-name"></div> <!-- Optional -->
+<button id="pay-btn">Pay</button>
+```
+
+```javascript
+// Number, expiry and cvc are required; name is optional.
+// Each value can be a CSS selector or an HTMLElement.
+var fields = zru.createCardFields({
+  fields: {
+    number: '#zru-number',
+    expiry: '#zru-expiry',
+    cvc: '#zru-cvc',
+    name: '#zru-name',
+  }
+});
+
+// Real-time validation: { field, valid, error }
+fields.on('change', function (event) {
+  console.log(event.field, event.valid, event.error);
+});
+
+// All fields loaded
+fields.on('ready', function () {});
+
+document.getElementById('pay-btn').addEventListener('click', function () {
+  // Uses the token's card gateway by default. You can also pass (gatewayCode, paymentScreenAccountId, callback).
+  fields.submit().then(function (result) {
+    if (result.success) {
+      // Payment done
+    } else if (result.html) {
+      // 3DS required: inject result.html in your page
+    } else {
+      // result.error (e.g. INVALID_FIELDS, FIELDS_INCOMPLETE, SUBMIT_IN_PROGRESS) and result.messages
+    }
+  });
+});
+
+fields.focus('number');
+fields.clear('cvc');
+fields.destroy(); // Removes the iframes and listeners
+```
+
+#### Error codes
+
+When `result.success` is `false` and there is no `result.html`, `result.error` contains one of these codes:
+
+| Code | When |
+|---|---|
+| `INVALID_FIELDS` | One or more fields are invalid. Each one also fires a `change` event with its error |
+| `FIELDS_INCOMPLETE` | A required field (number, expiry or cvc) didn't respond in time |
+| `SUBMIT_IN_PROGRESS` | `submit()` was called while a previous payment is still in progress |
+| `TRANSACTION_NOT_LOADED` | The transaction couldn't be loaded, e.g. an invalid or expired token |
+| `GATEWAY_NOT_FOUND` | The token has no card gateway, or the `gatewayCode` passed doesn't exist |
+| `DESTROYED` | `destroy()` was called while a payment was pending |
+| `UNKNOWN_ERROR` | The payment failed without a specific code |
+
+Any other value is the error code returned by the ZRU API when the payment is rejected, with the details in `result.messages`.
 
 ### More information
 
