@@ -85,6 +85,8 @@ gateways.forEach(function (gateway) {
 
 Mount each card field in your own layout. Every field is an iframe served by ZRU, so card data never touches your page.
 
+Each iframe only contains a transparent input, using the text color and font configured in the ZRU panel. The box around it is yours: style each container (border, background, height, padding) and build labels and error messages on your page using the field events. The iframe fills its container.
+
 ```HTML
 <div id="zru-number"></div>
 <div id="zru-expiry"></div>
@@ -105,10 +107,14 @@ var fields = zru.createCardFields({
   }
 });
 
-// Real-time validation: { field, valid, error }
+// Real-time validation: { field, valid, empty, error }
 fields.on('change', function (event) {
-  console.log(event.field, event.valid, event.error);
+  document.getElementById('zru-' + event.field).classList.toggle('is-invalid', !event.valid);
 });
+
+// Focus state for your borders: { field }
+fields.on('focus', function (event) {});
+fields.on('blur', function (event) {});
 
 // All fields loaded
 fields.on('ready', function () {});

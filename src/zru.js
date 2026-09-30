@@ -245,10 +245,13 @@
    * Mounts each card field in its own iframe served by the checkout.
    * Card data never reaches this page: the field iframes send it to each other directly.
    *
+   * The iframes only render a transparent input: the box, label and errors belong to the merchant page.
+   *
    * var fields = zru.createCardFields({
    *   fields: { number: '#zru-number', expiry: '#zru-expiry', cvc: '#zru-cvc', name: '#zru-name' }
    * });
-   * fields.on('change', function (e) {});  // e.field, e.valid, e.error
+   * fields.on('change', function (e) {});  // e.field, e.valid, e.empty, e.error
+   * fields.on('focus' | 'blur', function (e) {});  // e.field
    * fields.submit().then(function (result) {});  // result.success, result.html (3DS), result.error, result.messages
    */
   ZRU.prototype.createCardFields = function (options) {
@@ -257,7 +260,8 @@
     var FIELD_NAMES = ['number', 'expiry', 'cvc', 'name'];
     var REQUIRED_FIELDS = ['number', 'expiry', 'cvc'];
     var zru = this;
-    var fieldsOptions = (options && options.fields) || {};
+    options = options || {};
+    var fieldsOptions = options.fields || {};
     var iframes = {};
     var readyFields = {};
     var eventListeners = {};
@@ -344,10 +348,16 @@
           }
           break;
         case 'ZRU_FIELD_VALID':
-          emit('change', {field: data.field, valid: true, error: null});
+          emit('change', {field: data.field, valid: true, empty: !!data.empty, error: null});
           break;
         case 'ZRU_FIELD_ERROR':
-          emit('change', {field: data.field, valid: false, error: data.error});
+          emit('change', {field: data.field, valid: false, empty: !!data.empty, error: data.error});
+          break;
+        case 'ZRU_FIELD_FOCUS':
+          emit('focus', {field: data.field});
+          break;
+        case 'ZRU_FIELD_BLUR':
+          emit('blur', {field: data.field});
           break;
         case 'ZRU_PAYMENT_OK':
           resolvePending({success: true});
@@ -398,7 +408,7 @@
         });
       },
 
-      // Events: 'change' ({field, valid, error}) and 'ready' (all fields loaded)
+      // Events: 'change' ({field, valid, empty, error}), 'focus' / 'blur' ({field}) and 'ready' (all fields loaded)
       on: function (event, handler) {
         if (!eventListeners[event]) {
           eventListeners[event] = [];
