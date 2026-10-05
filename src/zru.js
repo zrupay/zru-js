@@ -252,7 +252,8 @@
    * });
    * fields.on('change', function (e) {});  // e.field, e.valid, e.empty, e.error
    * fields.on('focus' | 'blur', function (e) {});  // e.field
-   * fields.submit().then(function (result) {});  // result.success, result.html (3DS), result.error, result.messages
+   * fields.submit().then(function (result) {});  // result.success, result.html (3DS), result.dcc, result.error, result.messages
+   * fields.confirmDcc('USD').then(function (result) {});  // after result.dcc: same result shape
    */
   ZRU.prototype.createCardFields = function (options) {
     this.__checkIfToken();
@@ -365,6 +366,9 @@
         case 'ZRU_3DS_REQUIRED':
           resolvePending({success: false, html: data.html});
           break;
+        case 'ZRU_DCC_REQUIRED':
+          resolvePending({success: false, dcc: data.dcc});
+          break;
         case 'ZRU_PAYMENT_ERROR':
           resolvePending({success: false, error: data.error_code, messages: data.messages});
           break;
@@ -373,6 +377,29 @@
 
     window.addEventListener('message', onMessage);
 
+    // One request at a time: submit() or confirmDcc(). Returns a Promise; callback is optional
+    function startRequest(callback, send, immediateError) {
+      return new Promise(function (resolve) {
+        var done = function (result) {
+          if (callback) {
+            callback(result);
+          }
+          resolve(result);
+        };
+
+        if (pendingResolve) {
+          done({success: false, error: 'SUBMIT_IN_PROGRESS'});
+          return;
+        }
+        if (immediateError) {
+          done({success: false, error: immediateError});
+          return;
+        }
+        pendingResolve = done;
+        send();
+      });
+    }
+
     var cardFields = {
       /**
        * Pays with the card entered in the fields.
@@ -380,31 +407,27 @@
        * Returns a Promise; callback is optional.
        */
       submit: function (gatewayCode, paymentScreenAccountId, callback) {
-        return new Promise(function (resolve) {
-          var done = function (result) {
-            if (callback) {
-              callback(result);
-            }
-            resolve(result);
-          };
-
-          if (pendingResolve) {
-            done({success: false, error: 'SUBMIT_IN_PROGRESS'});
-            return;
-          }
-          var code = gatewayCode || (zru.tokenCardGateway && zru.tokenCardGateway.code);
-          if (!code) {
-            done({success: false, error: 'GATEWAY_NOT_FOUND'});
-            return;
-          }
-
-          pendingResolve = done;
+        var code = gatewayCode || (zru.tokenCardGateway && zru.tokenCardGateway.code);
+        if (!code) {
+          return startRequest(callback, null, 'GATEWAY_NOT_FOUND');
+        }
+        return startRequest(callback, function () {
           postToAll({
             type: 'ZRU_SUBMIT',
             gateway_code: code,
             payment_screen_account_id: paymentScreenAccountId || undefined,
             fields: Object.keys(iframes)
           });
+        });
+      },
+
+      /**
+       * Confirms the currency after submit() returned result.dcc.
+       * currency is one of result.dcc.offered[].currency, or result.dcc.original.currency to pay without conversion.
+       */
+      confirmDcc: function (currency, callback) {
+        return startRequest(callback, function () {
+          postToField('number', {type: 'ZRU_DCC_CONFIRM', currency: currency});
         });
       },
 

@@ -126,6 +126,8 @@ document.getElementById('pay-btn').addEventListener('click', function () {
       // Payment done
     } else if (result.html) {
       // 3DS required: inject result.html in your page
+    } else if (result.dcc) {
+      // DCC: the card can pay in its own currency. Show the quote and call fields.confirmDcc (see below)
     } else {
       // result.error (e.g. INVALID_FIELDS, FIELDS_INCOMPLETE, SUBMIT_IN_PROGRESS) and result.messages
     }
@@ -137,17 +139,53 @@ fields.clear('cvc');
 fields.destroy(); // Removes the iframes and listeners
 ```
 
+#### Dynamic Currency Conversion (DCC)
+
+If the card's gateway supports DCC, `submit()` may return `result.dcc` instead of finishing the payment. The payment is paused until the user chooses between paying in your currency or in the card's currency:
+
+```javascript
+// result.dcc
+{
+  expired_date: '2026-10-05T10:20:00Z',            // The quote expires, usually after 10 minutes
+  original: { currency: 'EUR', amount: 100 },      // Your currency and amount
+  offered: [                                       // Usually one option
+    { currency: 'USD', amount: 112.34, exchange_rate: 1.0907, markup: 0.03, rate_date: '2026-10-05T10:10:00Z' }
+  ]
+}
+```
+
+Show the options on your page and confirm the user's choice. The result has the same shape as `submit()`:
+
+```javascript
+fields.confirmDcc('USD').then(function (result) {
+  // result.success, result.html (3DS) or result.error
+});
+
+// Pay without conversion
+fields.confirmDcc(result.dcc.original.currency);
+```
+
+Card scheme rules require the DCC choice to be transparent. Your screen must:
+- Show both amounts: in your currency (`original`) and in the card's currency (`offered`).
+- Show the exchange rate and the markup (`markup` is a fraction: `0.03` is 3%).
+- Let the user choose explicitly, with no option preselected, and always offer paying in your currency.
+
+If `confirmDcc()` returns `DCC_EXPIRED`, the quote is no longer valid: call `submit()` again. The fields keep the card the user typed.
+
 #### Error codes
 
-When `result.success` is `false` and there is no `result.html`, `result.error` contains one of these codes:
+When `result.success` is `false` and there is no `result.html` or `result.dcc`, `result.error` contains one of these codes:
 
 | Code | When |
 |---|---|
 | `INVALID_FIELDS` | One or more fields are invalid. Each one also fires a `change` event with its error |
 | `FIELDS_INCOMPLETE` | A required field (number, expiry or cvc) didn't respond in time |
-| `SUBMIT_IN_PROGRESS` | `submit()` was called while a previous payment is still in progress |
+| `SUBMIT_IN_PROGRESS` | `submit()` or `confirmDcc()` was called while a previous request is still in progress |
 | `TRANSACTION_NOT_LOADED` | The transaction couldn't be loaded, e.g. an invalid or expired token |
 | `GATEWAY_NOT_FOUND` | The token has no card gateway, or the `gatewayCode` passed doesn't exist |
+| `DCC_EXPIRED` | The DCC quote expired or the attempt is no longer valid. Call `submit()` again |
+| `DCC_INVALID_CURRENCY` | The currency passed to `confirmDcc()` isn't one of the options. Choose another |
+| `DCC_NOT_PENDING` | `confirmDcc()` was called without a pending DCC quote |
 | `DESTROYED` | `destroy()` was called while a payment was pending |
 | `UNKNOWN_ERROR` | The payment failed without a specific code |
 
