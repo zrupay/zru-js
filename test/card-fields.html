@@ -146,6 +146,16 @@
         fields.on('blur', function (event) {
             container(event.field).classList.remove('is-focused');
         });
+        fields.on('unavailable', function (event) {
+            var messages = {
+                done: 'This payment has already been made.',
+                expired: 'This payment link has expired.',
+                cancelled: 'This payment was cancelled.',
+                not_found: 'This payment link is not valid.'
+            };
+            document.getElementById('result').textContent = messages[event.status] || 'This payment is not available.';
+            document.getElementById('pay-btn').disabled = true;
+        });
 
         function showResult(result) {
             document.getElementById('result').textContent = JSON.stringify(result, null, 2);

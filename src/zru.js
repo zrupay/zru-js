@@ -303,6 +303,8 @@
     var instanceId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     // Each submit gets its own id so the number iframe ignores answers to an older one
     var submitCount = 0;
+    // 'done', 'expired', 'cancelled' or 'not_found' once a field reports the transaction can't be paid
+    var unavailableStatus = null;
 
     REQUIRED_FIELDS.forEach(function (field) {
       if (!fieldsOptions[field]) {
@@ -420,6 +422,13 @@
           resolvePending({success: false, threeDS: true});
           zru.__renderHtml(getHtmlDiv(), data.html, true);
           break;
+        case 'ZRU_TRANSACTION_UNAVAILABLE':
+          // Every field reports it; tell the merchant once
+          if (!unavailableStatus) {
+            unavailableStatus = data.status;
+            emit('unavailable', {status: data.status});
+          }
+          break;
         case 'ZRU_DCC_REQUIRED':
           resolvePending({success: false, dcc: data.dcc});
           break;
@@ -432,7 +441,7 @@
     window.addEventListener('message', onMessage);
 
     // One request at a time: submit() or confirmDcc(). Returns a Promise; callback is optional
-    function startRequest(callback, send, immediateError) {
+    function startRequest(callback, send, immediateResult) {
       return new Promise(function (resolve) {
         var done = function (result) {
           if (callback) {
@@ -445,8 +454,8 @@
           done({success: false, error: 'SUBMIT_IN_PROGRESS'});
           return;
         }
-        if (immediateError) {
-          done({success: false, error: immediateError});
+        if (immediateResult) {
+          done(immediateResult);
           return;
         }
         pendingResolve = done;
@@ -471,12 +480,15 @@
         }
 
         var code = gatewayCode || (zru.tokenCardGateway && zru.tokenCardGateway.code);
+        if (unavailableStatus) {
+          return startRequest(callback, null, {success: false, error: 'TRANSACTION_UNAVAILABLE', messages: {status: unavailableStatus}});
+        }
         if (!code) {
-          return startRequest(callback, null, 'GATEWAY_NOT_FOUND');
+          return startRequest(callback, null, {success: false, error: 'GATEWAY_NOT_FOUND'});
         }
         // A field that never reported ready would never answer, leaving the promise pending
         if (!cardFields.isReady()) {
-          return startRequest(callback, null, 'NOT_READY');
+          return startRequest(callback, null, {success: false, error: 'NOT_READY'});
         }
         return startRequest(callback, function () {
           submitCount += 1;
@@ -502,7 +514,8 @@
         });
       },
 
-      // Events: 'change' ({field, valid, empty, error}), 'focus' / 'blur' ({field}) and 'ready' (all fields loaded)
+      // Events: 'change' ({field, valid, empty, error}), 'focus' / 'blur' ({field}), 'ready' (all fields loaded)
+      // and 'unavailable' ({status}: the transaction is already paid, expired, cancelled or not found)
       on: function (event, handler) {
         if (!eventListeners[event]) {
           eventListeners[event] = [];

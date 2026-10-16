@@ -119,6 +119,10 @@ fields.on('blur', function (event) {});
 // All fields loaded
 fields.on('ready', function () {});
 
+// The transaction can't be paid: { status } is 'done', 'expired', 'cancelled' or 'not_found'.
+// The fields are disabled; show your own message instead of the form
+fields.on('unavailable', function (event) {});
+
 document.getElementById('pay-btn').addEventListener('click', function () {
   // Uses the token's card gateway by default. You can also pass (gatewayCode, paymentScreenAccountId, callback).
   fields.submit().then(function (result) {
@@ -205,6 +209,7 @@ When `result.success` is `false` and there is no `result.threeDS` or `result.dcc
 |---|---|
 | `INVALID_FIELDS` | One or more fields are invalid. Each one also fires a `change` event with its error |
 | `FIELDS_INCOMPLETE` | A required field (number, expiry or cvc) didn't respond in time |
+| `TRANSACTION_UNAVAILABLE` | The transaction is already paid, expired, cancelled or doesn't exist. `result.messages.status` says which, as in the `unavailable` event |
 | `NOT_READY` | `submit()` was called before every field loaded. Wait for the `ready` event (see also the Firefox note below) |
 | `SUBMIT_IN_PROGRESS` | `submit()` or `confirmDcc()` was called while a previous request is still in progress |
 | `TRANSACTION_NOT_LOADED` | The transaction couldn't be loaded, e.g. an invalid or expired token |
