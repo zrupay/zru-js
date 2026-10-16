@@ -89,6 +89,15 @@
     <div id="zru-name" class="field"></div>
     <div id="name-error" class="error"></div>
 
+    <!-- Installments and user data: shown only when the token needs them -->
+    <div id="installments-block" style="display: none">
+        <label for="installments">Installments</label>
+        <select id="installments">
+            <option value="">No</option>
+        </select>
+    </div>
+    <div id="user-data"></div>
+
     <button id="pay-btn">Pay</button>
 
     <!-- DCC: rendered by the merchant -->
@@ -175,8 +184,33 @@
             document.getElementById('dcc-confirm').disabled = true;
         }
 
+        zru.getInstallments().forEach(function (installment) {
+            var option = document.createElement('option');
+            option.value = installment;
+            option.textContent = installment;
+            document.getElementById('installments').appendChild(option);
+            document.getElementById('installments-block').style.display = 'block';
+        });
+
+        zru.getRequiredUserData().forEach(function (field) {
+            var label = document.createElement('label');
+            label.textContent = field;
+            var input = document.createElement('input');
+            input.name = field;
+            input.className = 'user-data-input';
+            document.getElementById('user-data').appendChild(label);
+            document.getElementById('user-data').appendChild(input);
+        });
+
         document.getElementById('pay-btn').addEventListener('click', function () {
-            fields.submit().then(showResult);
+            var data = {};
+            document.querySelectorAll('.user-data-input').forEach(function (input) {
+                data[input.name] = input.value;
+            });
+            fields.submit({
+                installment: document.getElementById('installments').value || undefined,
+                data: data
+            }).then(showResult);
         });
 
         document.getElementById('dcc-confirm').addEventListener('click', function () {

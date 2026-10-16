@@ -241,6 +241,30 @@
 
   // Card Fields Public
 
+  // Installments the user can choose for the current token, e.g. [3, 6, 12]
+  ZRU.prototype.getInstallments = function () {
+    this.__checkIfToken();
+    return (this.tokenInfo.transaction && this.tokenInfo.transaction.installments) || [];
+  };
+
+  // User data fields the payment screen requires for a card gateway; pass them in submit({data})
+  ZRU.prototype.getRequiredUserData = function (gatewayCode) {
+    this.__checkIfToken();
+    var paymentScreen = this.tokenInfo.payment_screen || {};
+    var code = gatewayCode || (this.tokenCardGateway && this.tokenCardGateway.code);
+    var fields = [];
+    if (paymentScreen.request_identification) {
+      fields.push('identification');
+    }
+    if (code === 'PEI' && paymentScreen.request_pepper_client) {
+      fields.push('first_name', 'last_name', 'email');
+    }
+    if (code === 'PEI' && paymentScreen.request_pepper_address) {
+      fields.push('billing_street_name', 'billing_city', 'billing_province', 'billing_postal_code', 'billing_country_code');
+    }
+    return fields;
+  };
+
   /**
    * Mounts each card field in its own iframe served by the checkout.
    * Card data never reaches this page: the field iframes send it to each other directly.
@@ -253,6 +277,7 @@
    * fields.on('change', function (e) {});  // e.field, e.valid, e.empty, e.error
    * fields.on('focus' | 'blur', function (e) {});  // e.field
    * fields.submit().then(function (result) {});  // result.success, result.html (3DS), result.dcc, result.error, result.messages
+   * fields.submit({installment: 3, data: {identification: '12345678Z'}});  // optional, see getInstallments / getRequiredUserData
    * fields.confirmDcc('USD').then(function (result) {});  // after result.dcc: same result shape
    */
   ZRU.prototype.createCardFields = function (options) {
@@ -267,6 +292,11 @@
     var readyFields = {};
     var eventListeners = {};
     var pendingResolve = null;
+    // The field iframes find the number one by name (zru-field-<instance>-<field>),
+    // so several createCardFields() on the same page never talk to each other
+    var instanceId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    // Each submit gets its own id so the number iframe ignores answers to an older one
+    var submitCount = 0;
 
     REQUIRED_FIELDS.forEach(function (field) {
       if (!fieldsOptions[field]) {
@@ -287,6 +317,10 @@
       var iframe = document.createElement('iframe');
       iframe.src = zru.PAY_URL + zru.token + '/field/' + field;
       iframe.title = field;
+      iframe.name = 'zru-field-' + instanceId + '-' + field;
+      // The iframe learns this page's origin from the referrer in Firefox: send it even
+      // when the page's Referrer-Policy is no-referrer
+      iframe.referrerPolicy = 'origin';
       iframe.style.width = '100%';
       iframe.style.height = '100%';
       iframe.style.border = 'none';
@@ -403,20 +437,37 @@
     var cardFields = {
       /**
        * Pays with the card entered in the fields.
-       * gatewayCode defaults to the token's card gateway.
-       * Returns a Promise; callback is optional.
+       * submit(gatewayCode, paymentScreenAccountId, callback) or
+       * submit({gatewayCode, paymentScreenAccountId, installment, data}, callback).
+       * gatewayCode defaults to the token's card gateway. Returns a Promise; callback is optional.
        */
       submit: function (gatewayCode, paymentScreenAccountId, callback) {
+        var submitOptions = {};
+        if (gatewayCode && typeof gatewayCode === 'object') {
+          submitOptions = gatewayCode;
+          callback = paymentScreenAccountId;
+          gatewayCode = submitOptions.gatewayCode;
+          paymentScreenAccountId = submitOptions.paymentScreenAccountId;
+        }
+
         var code = gatewayCode || (zru.tokenCardGateway && zru.tokenCardGateway.code);
         if (!code) {
           return startRequest(callback, null, 'GATEWAY_NOT_FOUND');
         }
+        // A field that never reported ready would never answer, leaving the promise pending
+        if (!cardFields.isReady()) {
+          return startRequest(callback, null, 'NOT_READY');
+        }
         return startRequest(callback, function () {
+          submitCount += 1;
           postToAll({
             type: 'ZRU_SUBMIT',
+            submit_id: instanceId + '-' + submitCount,
             gateway_code: code,
             payment_screen_account_id: paymentScreenAccountId || undefined,
-            fields: Object.keys(iframes)
+            fields: Object.keys(iframes),
+            installment: submitOptions.installment,
+            data: submitOptions.data
           });
         });
       },

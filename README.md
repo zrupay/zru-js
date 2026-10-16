@@ -139,6 +139,25 @@ fields.clear('cvc');
 fields.destroy(); // Removes the iframes and listeners
 ```
 
+#### Installments and user data
+
+Some payments need extra information that isn't card data, so you collect it on your page and pass it to `submit()`:
+
+```javascript
+// Installments allowed for this token, e.g. [3, 6, 12]. Empty when not available
+var installments = zru.getInstallments();
+
+// User data the payment screen requires, e.g. ['identification']
+var required = zru.getRequiredUserData();
+
+fields.submit({
+  installment: 3,                                // Optional, one of getInstallments()
+  data: { identification: '12345678Z' },         // Required fields from getRequiredUserData()
+}).then(function (result) {});
+```
+
+Accepted `data` fields: `identification`, `first_name`, `last_name`, `email`, `billing_street_name`, `billing_city`, `billing_province`, `billing_postal_code` and `billing_country_code`. Any other field is ignored. You can also pass `gatewayCode` and `paymentScreenAccountId` in the same object.
+
 #### Dynamic Currency Conversion (DCC)
 
 If the card's gateway supports DCC, `submit()` may return `result.dcc` instead of finishing the payment. The payment is paused until the user chooses between paying in your currency or in the card's currency:
@@ -180,9 +199,12 @@ When `result.success` is `false` and there is no `result.html` or `result.dcc`, 
 |---|---|
 | `INVALID_FIELDS` | One or more fields are invalid. Each one also fires a `change` event with its error |
 | `FIELDS_INCOMPLETE` | A required field (number, expiry or cvc) didn't respond in time |
+| `NOT_READY` | `submit()` was called before every field loaded. Wait for the `ready` event (see also the Firefox note below) |
 | `SUBMIT_IN_PROGRESS` | `submit()` or `confirmDcc()` was called while a previous request is still in progress |
 | `TRANSACTION_NOT_LOADED` | The transaction couldn't be loaded, e.g. an invalid or expired token |
 | `GATEWAY_NOT_FOUND` | The token has no card gateway, or the `gatewayCode` passed doesn't exist |
+| `INVALID_INSTALLMENT` | The `installment` passed isn't one of `getInstallments()` |
+| `USER_DATA_REQUIRED` | A field from `getRequiredUserData()` is missing. `result.messages.fields` lists them |
 | `DCC_EXPIRED` | The DCC quote expired or the attempt is no longer valid. Call `submit()` again |
 | `DCC_INVALID_CURRENCY` | The currency passed to `confirmDcc()` isn't one of the options. Choose another |
 | `DCC_NOT_PENDING` | `confirmDcc()` was called without a pending DCC quote |
@@ -190,6 +212,10 @@ When `result.success` is `false` and there is no `result.html` or `result.dcc`, 
 | `UNKNOWN_ERROR` | The payment failed without a specific code |
 
 Any other value is the error code returned by the ZRU API when the payment is rejected, with the details in `result.messages`.
+
+#### Referrer policy
+
+Firefox tells the fields which page contains them through the referrer. zru-js creates the iframes with `referrerpolicy="origin"`, so only your origin is sent, even if your page sets `Referrer-Policy: no-referrer`. Don't remove that attribute: without it the fields can't talk to your page in Firefox and `submit()` returns `NOT_READY`.
 
 ### More information
 
