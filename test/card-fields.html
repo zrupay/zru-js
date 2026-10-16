@@ -108,7 +108,8 @@
     </div>
 
     <pre id="result"></pre>
-    <div id="three-ds"></div>
+    <!-- zru-js puts the bank's 3DS form here and submits it -->
+    <div id="zru-html-div" style="display: none"></div>
 
     <script>
         var zru = new ZRU(
@@ -149,8 +150,8 @@
         function showResult(result) {
             document.getElementById('result').textContent = JSON.stringify(result, null, 2);
             document.getElementById('dcc').style.display = result.dcc ? 'block' : 'none';
-            if (result.html) {
-                document.getElementById('three-ds').innerHTML = result.html;
+            if (result.threeDS) {
+                document.getElementById('result').textContent = 'Redirecting to your bank...';
             }
             if (result.dcc) {
                 showDcc(result.dcc);

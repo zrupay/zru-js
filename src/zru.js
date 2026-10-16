@@ -127,14 +127,20 @@
   };
 
   ZRU.prototype.__showHtml = function (htmlDiv, gatewayCode, submit) {
+    var htmlInfo = this.__request("GET", this.API_HTML_URL + gatewayCode + '/', null, null);
+    this.__renderHtml(htmlDiv, htmlInfo.html, submit);
+  };
+
+  // Shows the gateway html in the div and, when asked, submits its form (the page leaves to the gateway)
+  ZRU.prototype.__renderHtml = function (htmlDiv, html, submit) {
     if (!htmlDiv) {
       throw new Error('Must have an html div');
     }
-    var htmlInfo = this.__request("GET", this.API_HTML_URL + gatewayCode + '/', null, null);
-    htmlDiv.innerHTML = htmlInfo.html;
+    htmlDiv.innerHTML = html;
     htmlDiv.style.display = 'block';
-    if (submit) {
-      document.querySelector('#' + htmlDiv.id + ' form').submit();
+    var form = htmlDiv.querySelector('form');
+    if (submit && form) {
+      form.submit();
     }
   };
 
@@ -276,7 +282,7 @@
    * });
    * fields.on('change', function (e) {});  // e.field, e.valid, e.empty, e.error
    * fields.on('focus' | 'blur', function (e) {});  // e.field
-   * fields.submit().then(function (result) {});  // result.success, result.html (3DS), result.dcc, result.error, result.messages
+   * fields.submit().then(function (result) {});  // result.success, result.threeDS (redirecting to the bank), result.dcc, result.error, result.messages
    * fields.submit({installment: 3, data: {identification: '12345678Z'}});  // optional, see getInstallments / getRequiredUserData
    * fields.confirmDcc('USD').then(function (result) {});  // after result.dcc: same result shape
    */
@@ -330,6 +336,18 @@
       container.appendChild(iframe);
       iframes[field] = iframe;
     });
+
+    // The merchant's html div (htmlDivId option) or a hidden one, only to host the 3DS form
+    function getHtmlDiv() {
+      var htmlDiv = document.getElementById(zru.options.htmlDivId);
+      if (!htmlDiv) {
+        htmlDiv = document.createElement('div');
+        htmlDiv.id = zru.options.htmlDivId;
+        htmlDiv.style.display = 'none';
+        document.body.appendChild(htmlDiv);
+      }
+      return htmlDiv;
+    }
 
     function isFromOwnIframe(source) {
       for (var field in iframes) {
@@ -398,7 +416,9 @@
           resolvePending({success: true});
           break;
         case 'ZRU_3DS_REQUIRED':
-          resolvePending({success: false, html: data.html});
+          // Same as the 'html' apmOpenType: the page goes to the bank and comes back through ZRU
+          resolvePending({success: false, threeDS: true});
+          zru.__renderHtml(getHtmlDiv(), data.html, true);
           break;
         case 'ZRU_DCC_REQUIRED':
           resolvePending({success: false, dcc: data.dcc});

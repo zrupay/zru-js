@@ -124,8 +124,8 @@ document.getElementById('pay-btn').addEventListener('click', function () {
   fields.submit().then(function (result) {
     if (result.success) {
       // Payment done
-    } else if (result.html) {
-      // 3DS required: inject result.html in your page
+    } else if (result.threeDS) {
+      // 3DS required: zru-js already sent the user to the bank (see below)
     } else if (result.dcc) {
       // DCC: the card can pay in its own currency. Show the quote and call fields.confirmDcc (see below)
     } else {
@@ -158,6 +158,12 @@ fields.submit({
 
 Accepted `data` fields: `identification`, `first_name`, `last_name`, `email`, `billing_street_name`, `billing_city`, `billing_province`, `billing_postal_code` and `billing_country_code`. Any other field is ignored. You can also pass `gatewayCode` and `paymentScreenAccountId` in the same object.
 
+#### 3D Secure
+
+When the bank asks for 3D Secure, zru-js handles it the same way as the `html` `apmOpenType`: it puts the bank's form in the html div (`htmlDivId`, `zru-html-div` by default; a hidden one is created if your page doesn't have it) and submits it. The whole page goes to the bank, and when the user finishes, the bank returns through ZRU to your return URL.
+
+`submit()` resolves with `{ success: false, threeDS: true }` right before leaving, so you can show a "Redirecting to your bank" message. Check the final result on your return URL or with the ZRU notification, as with any redirect payment.
+
 #### Dynamic Currency Conversion (DCC)
 
 If the card's gateway supports DCC, `submit()` may return `result.dcc` instead of finishing the payment. The payment is paused until the user chooses between paying in your currency or in the card's currency:
@@ -177,7 +183,7 @@ Show the options on your page and confirm the user's choice. The result has the 
 
 ```javascript
 fields.confirmDcc('USD').then(function (result) {
-  // result.success, result.html (3DS) or result.error
+  // result.success, result.threeDS or result.error
 });
 
 // Pay without conversion
@@ -193,7 +199,7 @@ If `confirmDcc()` returns `DCC_EXPIRED`, the quote is no longer valid: call `sub
 
 #### Error codes
 
-When `result.success` is `false` and there is no `result.html` or `result.dcc`, `result.error` contains one of these codes:
+When `result.success` is `false` and there is no `result.threeDS` or `result.dcc`, `result.error` contains one of these codes:
 
 | Code | When |
 |---|---|
