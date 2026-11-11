@@ -119,8 +119,8 @@ fields.on('blur', function (event) {});
 // All fields loaded
 fields.on('ready', function () {});
 
-// The transaction can't be paid: { status } is 'done', 'expired', 'cancelled' or 'not_found'.
-// The fields are disabled; show your own message instead of the form
+// The transaction can't be paid: { status } is 'done', 'expired', 'cancelled', 'not_found'
+// or 'domain_not_allowed' (see Allowed domains). The fields are disabled; show your own message instead of the form
 fields.on('unavailable', function (event) {});
 
 document.getElementById('pay-btn').addEventListener('click', function () {
@@ -209,7 +209,7 @@ When `result.success` is `false` and there is no `result.threeDS` or `result.dcc
 |---|---|
 | `INVALID_FIELDS` | One or more fields are invalid. Each one also fires a `change` event with its error |
 | `FIELDS_INCOMPLETE` | A required field (number, expiry or cvc) didn't respond in time |
-| `TRANSACTION_UNAVAILABLE` | The transaction is already paid, expired, cancelled or doesn't exist. `result.messages.status` says which, as in the `unavailable` event |
+| `TRANSACTION_UNAVAILABLE` | The transaction is already paid, expired, cancelled or doesn't exist, or your page isn't one of its allowed domains. `result.messages.status` says which, as in the `unavailable` event |
 | `NOT_READY` | `submit()` was called before every field loaded. Wait for the `ready` event (see also the Firefox note below) |
 | `SUBMIT_IN_PROGRESS` | `submit()` or `confirmDcc()` was called while a previous request is still in progress |
 | `TRANSACTION_NOT_LOADED` | The transaction couldn't be loaded, e.g. an invalid or expired token |
@@ -227,6 +227,16 @@ Any other value is the error code returned by the ZRU API when the payment is re
 #### Referrer policy
 
 Firefox tells the fields which page contains them through the referrer. zru-js creates the iframes with `referrerpolicy="origin"`, so only your origin is sent, even if your page sets `Referrer-Policy: no-referrer`. Don't remove that attribute: without it the fields can't talk to your page in Firefox and `submit()` returns `NOT_READY`.
+
+#### Allowed domains
+
+You can limit which pages may embed the ZRU checkout, both the card fields and the full checkout in an iframe, by adding your domains to the allowed domains in the ZRU panel. Each entry is a full origin, such as `https://shop.com` (with the port if it isn't the default one), or a subdomain wildcard, such as `https://*.shop.com`, which doesn't include `shop.com` itself.
+
+- With no domains configured, any page can embed the checkout.
+- Test transactions are never checked.
+- Payment links, redirects and popups aren't checked: the browser shows the ZRU domain in the address bar.
+
+When the page isn't allowed, the card fields fire `unavailable` with `status: 'domain_not_allowed'`, and the full checkout shows a "payment unavailable" message and posts `ZRU_DOMAIN_NOT_ALLOWED` to your page. The browser console shows the origin that was detected, which is the one to add.
 
 ### More information
 
