@@ -219,7 +219,7 @@ When `result.success` is `false` and there is no `result.threeDS` or `result.dcc
 | `DCC_EXPIRED` | The DCC quote expired or the attempt is no longer valid. Call `submit()` again |
 | `DCC_INVALID_CURRENCY` | The currency passed to `confirmDcc()` isn't one of the options. Choose another |
 | `DCC_NOT_PENDING` | `confirmDcc()` was called without a pending DCC quote |
-| `DESTROYED` | `destroy()` was called while a payment was pending |
+| `DESTROYED` | `destroy()` was called while a payment was pending, or `submit()`/`confirmDcc()` was called after `destroy()` |
 | `UNKNOWN_ERROR` | The payment failed without a specific code |
 
 Any other value is the error code returned by the ZRU API when the payment is rejected, with the details in `result.messages`.

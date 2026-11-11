@@ -1,6 +1,6 @@
 {
   "name": "zru-js",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "JS library for the ZRU API.",
   "keywords": [
     "zru",
@@ -17,8 +17,13 @@
     "type": "git",
     "url": "git://github.com/zrupay/zru-js.git"
   },
-  "bugs:": "https://github.com/zrupay/zru-js/issues",
+  "bugs": "https://github.com/zrupay/zru-js/issues",
   "main": "dist/zru.min.js",
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
   "license": "MIT",
   "devDependencies": {
     "terser": "^5.51.2"

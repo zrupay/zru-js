@@ -98,7 +98,8 @@
     </div>
     <div id="user-data"></div>
 
-    <button id="pay-btn">Pay</button>
+    <!-- Enabled once every field has loaded (ready event) -->
+    <button id="pay-btn" disabled>Pay</button>
 
     <!-- DCC: rendered by the merchant -->
     <div id="dcc" style="display: none">
@@ -146,13 +147,20 @@
         fields.on('blur', function (event) {
             container(event.field).classList.remove('is-focused');
         });
+        var unavailable = false;
+        fields.on('ready', function () {
+            document.getElementById('pay-btn').disabled = unavailable;
+        });
         fields.on('unavailable', function (event) {
             var messages = {
                 done: 'This payment has already been made.',
                 expired: 'This payment link has expired.',
                 cancelled: 'This payment was cancelled.',
-                not_found: 'This payment link is not valid.'
+                not_found: 'This payment link is not valid.',
+                // This page's origin isn't in the allowed domains (see the browser console)
+                domain_not_allowed: 'This payment can\'t be made from this page.'
             };
+            unavailable = true;
             document.getElementById('result').textContent = messages[event.status] || 'This payment is not available.';
             document.getElementById('pay-btn').disabled = true;
         });

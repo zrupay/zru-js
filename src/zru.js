@@ -88,33 +88,56 @@
     this.gatewaySelected = null;
   };
 
+  // Waits for the checkout's result (done, cancel, expired or error) and calls back once.
+  // Only messages from the checkout count, and a new call replaces the previous listener
   ZRU.prototype.__receiveMessages = function(callback, iframe) {
-    this.__receiveMessagesCallback = callback;
+    var zru = this;
+    this.__stopReceivingMessages();
 
-    // Create IE + others compatible event handler
-    var eventMethod = window.addEventListener ? 'addEventListener' : 'attachEvent';
-    var eventer = window[eventMethod];
-    var messageEvent = eventMethod == 'attachEvent' ? 'onmessage' : 'message';
-
-    // Listen to message from child window
-    eventer(messageEvent, event => {
-      if (event.data == 'MC2P_DONE' || event.data == 'ZRU_DONE') {
-        this.__hideId(iframe.id);
-        this.__receiveMessagesCallback({success: true});
-      } else if (event.data == 'MC2P_CANCEL' || event.data == 'MC2P_EXPIRED' || event.data == 'ZRU_CANCEL' || event.data == 'ZRU_EXPIRED') {
-        this.__hideId(iframe.id);
-        this.__receiveMessagesCallback({success: false, error: event.data});
-      } else if (event.data.number) {
-        this.__hideId(iframe.id);
-        this.__receiveMessagesCallback({success: false, error: event.data.number[0], messages: event.data.messages});
+    this.__receiveMessagesHandler = function (event) {
+      if (event.origin !== zru.PAY_ORIGIN) {
+        return;
       }
-    }, false);
+      var data = event.data;
+      var result = null;
+      if (data == 'MC2P_DONE' || data == 'ZRU_DONE') {
+        result = {success: true};
+      } else if (data == 'MC2P_CANCEL' || data == 'MC2P_EXPIRED' || data == 'ZRU_CANCEL' || data == 'ZRU_EXPIRED') {
+        result = {success: false, error: data};
+      } else if (data && data.number) {
+        result = {success: false, error: data.number[0], messages: data.messages};
+      }
+      if (!result) {
+        return;
+      }
+      // The checkout sends both MC2P_ and ZRU_ messages: answer only the first
+      zru.__stopReceivingMessages();
+      if (iframe) {
+        zru.__hideId(iframe.id);
+      }
+      callback(result);
+    };
+    window.addEventListener('message', this.__receiveMessagesHandler);
+  };
+
+  ZRU.prototype.__stopReceivingMessages = function () {
+    if (this.__receiveMessagesHandler) {
+      window.removeEventListener('message', this.__receiveMessagesHandler);
+      this.__receiveMessagesHandler = null;
+    }
   };
 
   ZRU.prototype.__hideId = function (id) {
     var idElement = document.getElementById(id);
     if (idElement) {
       idElement.style.display = 'none';
+    }
+  };
+
+  ZRU.prototype.__stopWindowMessages = function () {
+    if (this.__windowMessageHandler) {
+      window.removeEventListener('message', this.__windowMessageHandler);
+      this.__windowMessageHandler = null;
     }
   };
 
@@ -184,7 +207,7 @@
     var iframe = null;
     if (iframeId || this.options.iframeId) {
       var iframe = document.getElementById(iframeId || this.options.iframeId);
-      this.__hideId(iframeId || this.options.iFrameId);
+      this.__hideId(iframeId || this.options.iframeId);
     }
 
     var redirectUrl = this.REDIRECT_URL + this.gatewaySelected.code;
@@ -215,19 +238,24 @@
               'width=' + width + ',height=' + height + ',scrollbars=NO,top=' + top + ',left=' + left
             );
             var zru = this;
-            var closedTimer = setInterval(function () { 
+            // A new window replaces the listener of the previous one
+            this.__stopWindowMessages();
+            var closedTimer = setInterval(function () {
               if(wnd.closed) {
                 clearInterval(closedTimer);
+                zru.__stopWindowMessages();
                 if (zru.options.windowsClosedCallback) {
                   zru.options.windowsClosedCallback({
-                    gateway: gatewayCode 
+                    gateway: gatewayCode
                   });
                 }
               }
             }, 500);
-            window.addEventListener('message', function (event) {
+            this.__windowMessageHandler = function (event) {
               if (event.data == 'MC2P_DONE' || event.data == 'MC2P_CANCEL' || event.data == 'MC2P_EXPIRED' || event.data == 'ZRU_DONE' || event.data == 'ZRU_CANCEL' || event.data == 'ZRU_EXPIRED') {
                 if (event.origin == zru.PAY_ORIGIN) {
+                  // The checkout sends both MC2P_ and ZRU_ messages: answer only the first
+                  zru.__stopWindowMessages();
                   clearInterval(closedTimer);
                   wnd.close();
                   if (zru.options.windowsFinishedCallback) {
@@ -235,12 +263,13 @@
                       done: event.data == 'MC2P_DONE' || event.data == 'ZRU_DONE',
                       cancel: event.data == 'MC2P_CANCEL' || event.data == 'ZRU_CANCEL',
                       expired: event.data == 'MC2P_EXPIRED' || event.data == 'ZRU_EXPIRED',
-                      gateway: gatewayCode 
+                      gateway: gatewayCode
                     });
                   }
                 }
               }
-            });
+            };
+            window.addEventListener('message', this.__windowMessageHandler);
         }
     }
   };
@@ -305,6 +334,8 @@
     var submitCount = 0;
     // 'done', 'expired', 'cancelled' or 'not_found' once a field reports the transaction can't be paid
     var unavailableStatus = null;
+    // After destroy() there are no iframes left to answer, so requests fail right away
+    var destroyed = false;
 
     REQUIRED_FIELDS.forEach(function (field) {
       if (!fieldsOptions[field]) {
@@ -450,6 +481,10 @@
           resolve(result);
         };
 
+        if (destroyed) {
+          done({success: false, error: 'DESTROYED'});
+          return;
+        }
         if (pendingResolve) {
           done({success: false, error: 'SUBMIT_IN_PROGRESS'});
           return;
@@ -533,12 +568,13 @@
       },
 
       isReady: function () {
-        return Object.keys(iframes).every(function (field) {
+        return !destroyed && Object.keys(iframes).every(function (field) {
           return readyFields[field];
         });
       },
 
       destroy: function () {
+        destroyed = true;
         window.removeEventListener('message', onMessage);
         for (var field in iframes) {
           var iframe = iframes[field];
@@ -646,7 +682,7 @@
     var iframe = null;
     if (iframeId || this.options.iframeId) {
       var iframe = document.getElementById(iframeId || this.options.iframeId);
-      this.__hideId(iframeId || this.options.iFrameId);
+      this.__hideId(iframeId || this.options.iframeId);
     }
     this.__request('POST', this.API_URL + 'google-pay/' + this.tokenCardGateway.code + '/', data, function (response) {
       if (!zru.__googleCompleteCallback) {
@@ -657,7 +693,7 @@
       } else if (response.result == 'verification-value-needed') {
         zru.__showIframe(iframe, zru.PAY_URL + zru.token + '/cvc/' + zru.tokenCardGateway.code + '?r=' + response.response_id + '&n=' + response.number_masked + '&w=' + response.wallet_slug);
         var completedPromise = new Promise((resolve) => {
-          zru.__receiveMessages(resolve);
+          zru.__receiveMessages(resolve, iframe);
         })
         zru.__googleCompleteCallback({success: false, completed: completedPromise});
       } else {
