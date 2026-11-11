@@ -230,10 +230,10 @@ Firefox tells the fields which page contains them through the referrer. zru-js c
 
 #### Allowed domains
 
-You can limit which pages may embed the ZRU checkout, both the card fields and the full checkout in an iframe, by adding your domains to the allowed domains in the ZRU panel. Each entry is a full origin, such as `https://shop.com` (with the port if it isn't the default one), or a subdomain wildcard, such as `https://*.shop.com`, which doesn't include `shop.com` itself.
+You can limit which pages may embed the ZRU checkout, both the card fields and the full checkout in an iframe, by adding your domains to the allowed domains of each environment in the ZRU panel. Each entry is a full origin, such as `https://shop.com` (with the port if it isn't the default one), or a subdomain wildcard, such as `https://*.shop.com`, which doesn't include `shop.com` itself. If you need both, add both.
 
 - With no domains configured, any page can embed the checkout.
-- Test transactions are never checked.
+- In a test environment the page is checked but never blocked: if it isn't allowed, the browser console shows a warning. Use it to check your list before going live.
 - Payment links, redirects and popups aren't checked: the browser shows the ZRU domain in the address bar.
 
 When the page isn't allowed, the card fields fire `unavailable` with `status: 'domain_not_allowed'`, and the full checkout shows a "payment unavailable" message and posts `ZRU_DOMAIN_NOT_ALLOWED` to your page. The browser console shows the origin that was detected, which is the one to add.
