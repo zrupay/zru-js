@@ -13,7 +13,7 @@ You can install using npm:
 npm install zru-js
 ```
 
-or to install from source, download [zru.min.js](https://raw.github.com/zrupay/zru-js/master/dist/zru.min.js) and include it in your HTML document, this will add a global object called ZRU:
+or to install from source, download [zru.min.js](https://raw.githubusercontent.com/zrupay/zru-js/main/dist/zru.min.js) and include it in your HTML document, this will add a global object called ZRU:
 
 ```HTML
 <script src="zru.min.js"></script>
