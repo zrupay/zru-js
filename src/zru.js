@@ -593,78 +593,179 @@
 
   // Apple Pay Private
 
+  // Apple Pay JS SDK: the official <apple-pay-button> and Apple Pay in browsers other than Safari
+  var APPLE_PAY_SDK_URL = 'https://applepay.cdn-apple.com/jsapi/1.latest/apple-pay-sdk.js';
+
+  ZRU.prototype.__loadApplePaySdk = function () {
+    return new Promise(function (resolve, reject) {
+      if (typeof document === 'undefined') {
+        reject();
+        return;
+      }
+      var script = document.querySelector('script[src="' + APPLE_PAY_SDK_URL + '"]');
+      if (script && script.getAttribute('data-zru-loaded')) {
+        resolve();
+        return;
+      }
+      // A script that already failed doesn't fire load or error again
+      if (script && script.getAttribute('data-zru-failed')) {
+        reject();
+        return;
+      }
+      if (!script) {
+        script = document.createElement('script');
+        script.src = APPLE_PAY_SDK_URL;
+        script.crossOrigin = 'anonymous';
+        script.async = true;
+        document.head.appendChild(script);
+      }
+      script.addEventListener('load', function () {
+        script.setAttribute('data-zru-loaded', 'true');
+        resolve();
+      });
+      script.addEventListener('error', function () {
+        script.setAttribute('data-zru-failed', 'true');
+        reject();
+      });
+    });
+  };
+
   ZRU.prototype.__requestApplePayInfo = function () {
     this.__checkIfTokenCardGateway();
     return this.__request('POST', this.API_URL + 'apple-pay/' + this.tokenCardGateway.code + '/info/', null, null);
   };
 
+  // Apple Pay completion calls throw when the session no longer accepts them
+  // (already completed or aborted): the payment result is reported anyway
+  ZRU.prototype.__completeAppleSession = function (action) {
+    try {
+      action();
+    } catch (e) {
+      // Nothing else to do with the sheet
+    }
+  };
+
+  ZRU.prototype.__finishApplePay = function (result) {
+    this.__appleAuthorized = false;
+    var callback = this.__appleCompleteCallback;
+    this.__appleCompleteCallback = null;
+    if (callback) {
+      callback(result);
+    }
+  };
+
   ZRU.prototype.__sendAppleData = function(data) {
     this.__checkIfTokenCardGateway();
     var zru = this;
+    var session = this.__appleSession;
     this.__request('POST', this.API_URL + 'apple-pay/' + this.tokenCardGateway.code + '/', data, function (response) {
       if (response.messages) {
-        const result = {
-          'status': root.ApplePaySession.STATUS_FAILURE
-        };
-        zru.__appleSession.completePayment(result);
-        if (zru.__appleCompleteCallback) {
-          zru.__appleCompleteCallback({success: false, error: response.number[0], messages: response.messages});
+        // completePayment() is only valid once the customer authorized the payment;
+        // a failure before that (merchant validation) aborts the session
+        if (zru.__appleAuthorized) {
+          zru.__completeAppleSession(function () {
+            session.completePayment({'status': root.ApplePaySession.STATUS_FAILURE});
+          });
+        } else {
+          zru.__completeAppleSession(function () {
+            session.abort();
+          });
         }
+        zru.__finishApplePay({success: false, error: response.number && response.number[0], messages: response.messages});
       } else if (response.result == 'merchant-validated') {
-        zru.__appleSession.completeMerchantValidation(response.session);           
+        zru.__completeAppleSession(function () {
+          session.completeMerchantValidation(response.session);
+        });
       } else {
-        const result = {
-          'status': root.ApplePaySession.STATUS_SUCCESS
-        };
-        zru.__appleSession.completePayment(result);
-        if (zru.__appleCompleteCallback) {
-          zru.__appleCompleteCallback({success: true});
-        }
+        zru.__completeAppleSession(function () {
+          session.completePayment({'status': root.ApplePaySession.STATUS_SUCCESS});
+        });
+        zru.__finishApplePay({success: true});
       }
     });
   };
 
   // Apple Pay Public
 
+  // Whether Apple Pay can be shown now: in Safari, or in other browsers once loadApplePay() resolved
   ZRU.prototype.canUseApplePay = function () {
     if (this.tokenCardGateway && !this.tokenCardGateway.allow_apple_pay) {
       return false;
     }
     try {
-      return root.ApplePaySession && root.ApplePaySession.canMakePayments();
+      return !!(root.ApplePaySession && root.ApplePaySession.canMakePayments());
     } catch (e) {
       return false;
-    }    
+    }
   };
 
+  // Loads the Apple Pay JS SDK, which adds Apple Pay to browsers other than Safari
+  // (the customer pays with their iPhone) and the <apple-pay-button> element.
+  // Resolves with canUseApplePay(); without the SDK, Safari still works
+  ZRU.prototype.loadApplePay = function () {
+    var zru = this;
+    if (this.tokenCardGateway && !this.tokenCardGateway.allow_apple_pay) {
+      return Promise.resolve(false);
+    }
+    return this.__loadApplePaySdk().then(function () {
+      zru.applePaySdkLoaded = true;
+    }, function () {
+      zru.applePaySdkLoaded = false;
+    }).then(function () {
+      return zru.canUseApplePay();
+    });
+  };
+
+  // Call it from the click on the Apple Pay button
   ZRU.prototype.startApplePay = function () {
     return new Promise((resolve) => {
+      if (!root.ApplePaySession) {
+        resolve({success: false, error: 'APPLE_PAY_NOT_AVAILABLE'});
+        return;
+      }
+      // A new payment replaces one that wasn't finished
+      this.__finishApplePay({success: false});
       this.__appleCompleteCallback = resolve;
+      this.__appleAuthorized = false;
       var appleInfo = this.__requestApplePayInfo();
 
-      this.__appleSession = new root.ApplePaySession(1, appleInfo.session);
+      var session;
+      try {
+        session = new root.ApplePaySession(1, appleInfo.session);
+      } catch (e) {
+        this.__finishApplePay({success: false, error: 'APPLE_PAY_NOT_AVAILABLE'});
+        return;
+      }
+      this.__appleSession = session;
 
-      this.__appleSession.onvalidatemerchant = (event) => {
+      session.onvalidatemerchant = (event) => {
         this.__sendAppleData({
           url: event.validationURL,
           domain: document.location.hostname
         });
       };
 
-      this.__appleSession.onpaymentmethodselected = (event) => {
+      session.onpaymentmethodselected = (event) => {
         const paymentMethodSelection = appleInfo.order;
-        this.__appleSession.completePaymentMethodSelection(paymentMethodSelection.newTotal, paymentMethodSelection.newLineItems);
-      };
-      
-      this.__appleSession.onpaymentauthorized = (event) => {
-        this.__sendAppleData(event.payment.token);      
+        session.completePaymentMethodSelection(paymentMethodSelection.newTotal, paymentMethodSelection.newLineItems);
       };
 
-      this.__appleSession.oncancel = (event) => {
-        resolve({success: false});
+      session.onpaymentauthorized = (event) => {
+        this.__appleAuthorized = true;
+        this.__sendAppleData(event.payment.token);
       };
 
-      this.__appleSession.begin();
+      session.oncancel = (event) => {
+        if (this.__appleSession === session) {
+          this.__finishApplePay({success: false});
+        }
+      };
+
+      try {
+        session.begin();
+      } catch (e) {
+        this.__finishApplePay({success: false, error: 'APPLE_PAY_NOT_AVAILABLE'});
+      }
     });
   };
 

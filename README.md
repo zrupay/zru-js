@@ -238,6 +238,34 @@ You can limit which pages may embed the ZRU checkout, both the card fields and t
 
 When the page isn't allowed, the card fields fire `unavailable` with `status: 'domain_not_allowed'`, and the full checkout shows a "payment unavailable" message and posts `ZRU_DOMAIN_NOT_ALLOWED` to your page. The browser console shows the origin that was detected, which is the one to add.
 
+### Apple Pay
+
+Apple Pay works in Safari and, with the Apple Pay JS SDK, in other browsers such as Chrome, Edge or Firefox, where the customer completes the payment with their iPhone. `loadApplePay()` loads the SDK and resolves with whether Apple Pay can be used, so you know when to show the button:
+
+```HTML
+<!-- Apple Pay JS SDK button, hidden until loadApplePay() resolves -->
+<apple-pay-button id="apple-pay" buttonstyle="black" type="plain" locale="en-US" style="display: none;"></apple-pay-button>
+```
+
+```javascript
+zru.loadApplePay().then(function (canUseApplePay) {
+  if (canUseApplePay) {
+    document.getElementById('apple-pay').style.display = 'inline-block';
+  }
+});
+
+document.getElementById('apple-pay').addEventListener('click', function () {
+  // Start the payment from the click: browsers only open the Apple Pay sheet after a user action
+  zru.startApplePay().then(function (result) {
+    // result.success, or result.error and result.messages
+  });
+});
+```
+
+If the SDK can't be loaded (for example, blocked by a content security policy), `zru.applePaySdkLoaded` is `false` and `<apple-pay-button>` isn't available. Apple Pay still works in Safari: show a button styled with `-webkit-appearance: -apple-pay-button` instead, as in `test/test.html`.
+
+`canUseApplePay()` returns the same value synchronously once `loadApplePay()` has resolved. When `startApplePay()` is called in a browser without Apple Pay, it resolves with `{ success: false, error: 'APPLE_PAY_NOT_AVAILABLE' }`.
+
 ### More information
 
 You can see examples of Google Pay and Apple Pay in the test.html file inside the test folder.

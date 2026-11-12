@@ -13,7 +13,7 @@
             }
 
             /* Styles for Google Pay and Apple Pay buttons */
-            #google-pay, #apple-pay {
+            #google-pay, #apple-pay, #apple-pay-legacy {
                 margin: 5px;
                 cursor: pointer;
                 width: 150px;
@@ -38,7 +38,14 @@
                 gap: 5px;
             }
 
-            /* Apple Pay button styles */
+            /* Apple Pay JS SDK button */
+            apple-pay-button {
+                --apple-pay-button-width: 150px;
+                --apple-pay-button-height: 30px;
+                --apple-pay-button-border-radius: 5px;
+            }
+
+            /* Safari-only Apple Pay button, used if the Apple Pay JS SDK can't be loaded */
             .apple-pay-button {
                 display: inline-block;
                 -webkit-appearance: -apple-pay-button;
@@ -62,8 +69,9 @@
         onload="onLoadScriptGoogle()">
         </script>
 
-       <!-- Apple Pay and Google Pay Buttons -->
-        <div id="apple-pay" class="apple-pay-button" onclick="startApplePay()"></div>
+       <!-- Apple Pay and Google Pay Buttons. Apple Pay stays hidden until loadApplePay() says it can be used -->
+        <apple-pay-button id="apple-pay" buttonstyle="black" type="plain" locale="es-ES" onclick="startApplePay()" style="display: none;"></apple-pay-button>
+        <div id="apple-pay-legacy" class="apple-pay-button apple-pay-button-black" onclick="startApplePay()" style="display: none;"></div>
         <div id="google-pay" onclick="startGooglePay()">
             <img src="https://developers.google.com/static/pay/api/images/brand-guidelines/plain-button-white-pill-shape.png" width="100%">
         </div>
@@ -108,11 +116,16 @@
             // Set the transaction, subscription, or authorization token to be used in this payment session.
             zru.setToken('ed83895d7ed24720aed773a0881368df');
 
-            // Check if the browser supports Apple Pay. If not, you must hide the Apple Pay button.
-            if (!zru.canUseApplePay()) {
-                console.log('Apple Pay not supported');
-                document.getElementById('apple-pay').setAttribute('style', 'display: none;');
-            }
+            // Load the Apple Pay JS SDK, which adds Apple Pay to browsers other than Safari, and show
+            // the button only if Apple Pay can be used. Without the SDK, Safari falls back to its own button.
+            zru.loadApplePay().then(function (canUseApplePay) {
+                if (!canUseApplePay) {
+                    console.log('Apple Pay not supported');
+                    return;
+                }
+                var buttonId = zru.applePaySdkLoaded ? 'apple-pay' : 'apple-pay-legacy';
+                document.getElementById(buttonId).style.display = 'inline-block';
+            });
 
             function onLoadScriptGoogle() {
                 // Check if the browser supports Google Pay. If not, you must hide the Google Pay button.
