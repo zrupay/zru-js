@@ -13,7 +13,7 @@ You can install using npm:
 npm install zru-js
 ```
 
-or to install from source, download [zru.min.js](https://raw.github.com/zrupay/zru-js/master/dist/zru.min.js) and include it in your HTML document, this will add a global object called ZRU:
+or to install from source, download [zru.min.js](https://raw.githubusercontent.com/zrupay/zru-js/main/dist/zru.min.js) and include it in your HTML document, this will add a global object called ZRU:
 
 ```HTML
 <script src="zru.min.js"></script>
@@ -47,9 +47,10 @@ var zru = new ZRU(
     // This can be useful for handling cases where the user closes the window without completing the payment.
     windowsClosedCallback: undefined,
     
-    // windowsCompletedCallback: A callback that is triggered when the payment is successfully completed using the 'window' option.
-    // Useful to perform actions such as redirecting the user or displaying a confirmation message.
-    windowsCompletedCallback: undefined,
+    // windowsFinishedCallback: A callback that is triggered when the payment finishes using the 'window' option.
+    // Receives { done, cancel, expired, gateway }. Useful to perform actions such as redirecting the user or displaying a confirmation message.
+    // windowsCompletedCallback is also accepted as an alias.
+    windowsFinishedCallback: undefined,
   }
 );
 ```
@@ -79,6 +80,191 @@ gateways.forEach(function (gateway) {
     };
 });
 ```
+
+### Card fields in separate iframes
+
+Mount each card field in your own layout. Every field is an iframe served by ZRU, so card data never touches your page.
+
+Each iframe only contains a transparent input, using the text color and font configured in the ZRU panel. The box around it is yours: style each container (border, background, height, padding) and build labels and error messages on your page using the field events. The iframe fills its container.
+
+```HTML
+<div id="zru-number"></div>
+<div id="zru-expiry"></div>
+<div id="zru-cvc"></div>
+<div id="zru-name"></div> <!-- Optional -->
+<button id="pay-btn">Pay</button>
+```
+
+```javascript
+// Number, expiry and cvc are required; name is optional.
+// Each value can be a CSS selector or an HTMLElement.
+var fields = zru.createCardFields({
+  fields: {
+    number: '#zru-number',
+    expiry: '#zru-expiry',
+    cvc: '#zru-cvc',
+    name: '#zru-name',
+  }
+});
+
+// Real-time validation: { field, valid, empty, error }
+fields.on('change', function (event) {
+  document.getElementById('zru-' + event.field).classList.toggle('is-invalid', !event.valid);
+});
+
+// Focus state for your borders: { field }
+fields.on('focus', function (event) {});
+fields.on('blur', function (event) {});
+
+// All fields loaded
+fields.on('ready', function () {});
+
+// The transaction can't be paid: { status } is 'done', 'expired', 'cancelled', 'not_found'
+// or 'domain_not_allowed' (see Allowed domains). The fields are disabled; show your own message instead of the form
+fields.on('unavailable', function (event) {});
+
+document.getElementById('pay-btn').addEventListener('click', function () {
+  // Uses the token's card gateway by default. You can also pass (gatewayCode, paymentScreenAccountId, callback).
+  fields.submit().then(function (result) {
+    if (result.success) {
+      // Payment done
+    } else if (result.threeDS) {
+      // 3DS required: zru-js already sent the user to the bank (see below)
+    } else if (result.dcc) {
+      // DCC: the card can pay in its own currency. Show the quote and call fields.confirmDcc (see below)
+    } else {
+      // result.error (e.g. INVALID_FIELDS, FIELDS_INCOMPLETE, SUBMIT_IN_PROGRESS) and result.messages
+    }
+  });
+});
+
+fields.focus('number');
+fields.clear('cvc');
+fields.destroy(); // Removes the iframes and listeners
+```
+
+#### Installments and user data
+
+Some payments need extra information that isn't card data, so you collect it on your page and pass it to `submit()`:
+
+```javascript
+// Installments allowed for this token, e.g. [3, 6, 12]. Empty when not available
+var installments = zru.getInstallments();
+
+// User data the payment screen requires, e.g. ['identification']
+var required = zru.getRequiredUserData();
+
+fields.submit({
+  installment: 3,                                // Optional, one of getInstallments()
+  data: { identification: '12345678Z' },         // Required fields from getRequiredUserData()
+}).then(function (result) {});
+```
+
+Accepted `data` fields: `identification`, `first_name`, `last_name`, `email`, `billing_street_name`, `billing_city`, `billing_province`, `billing_postal_code` and `billing_country_code`. Any other field is ignored. You can also pass `gatewayCode` and `paymentScreenAccountId` in the same object.
+
+#### 3D Secure
+
+When the bank asks for 3D Secure, zru-js handles it the same way as the `html` `apmOpenType`: it puts the bank's form in the html div (`htmlDivId`, `zru-html-div` by default; a hidden one is created if your page doesn't have it) and submits it. The whole page goes to the bank, and when the user finishes, the bank returns through ZRU to your return URL.
+
+`submit()` resolves with `{ success: false, threeDS: true }` right before leaving, so you can show a "Redirecting to your bank" message. Check the final result on your return URL or with the ZRU notification, as with any redirect payment.
+
+#### Dynamic Currency Conversion (DCC)
+
+If the card's gateway supports DCC, `submit()` may return `result.dcc` instead of finishing the payment. The payment is paused until the user chooses between paying in your currency or in the card's currency:
+
+```javascript
+// result.dcc
+{
+  expired_date: '2026-10-05T10:20:00Z',            // The quote expires, usually after 10 minutes
+  original: { currency: 'EUR', amount: 100 },      // Your currency and amount
+  offered: [                                       // Usually one option
+    { currency: 'USD', amount: 112.34, exchange_rate: 1.0907, markup: 0.03, rate_date: '2026-10-05T10:10:00Z' }
+  ]
+}
+```
+
+Show the options on your page and confirm the user's choice. The result has the same shape as `submit()`:
+
+```javascript
+fields.confirmDcc('USD').then(function (result) {
+  // result.success, result.threeDS or result.error
+});
+
+// Pay without conversion
+fields.confirmDcc(result.dcc.original.currency);
+```
+
+Card scheme rules require the DCC choice to be transparent. Your screen must:
+- Show both amounts: in your currency (`original`) and in the card's currency (`offered`).
+- Show the exchange rate and the markup (`markup` is a fraction: `0.03` is 3%).
+- Let the user choose explicitly, with no option preselected, and always offer paying in your currency.
+
+If `confirmDcc()` returns `DCC_EXPIRED`, the quote is no longer valid: call `submit()` again. The fields keep the card the user typed.
+
+#### Error codes
+
+When `result.success` is `false` and there is no `result.threeDS` or `result.dcc`, `result.error` contains one of these codes:
+
+| Code | When |
+|---|---|
+| `INVALID_FIELDS` | One or more fields are invalid. Each one also fires a `change` event with its error |
+| `FIELDS_INCOMPLETE` | A required field (number, expiry or cvc) didn't respond in time |
+| `TRANSACTION_UNAVAILABLE` | The transaction is already paid, expired, cancelled or doesn't exist, or your page isn't one of its allowed domains. `result.messages.status` says which, as in the `unavailable` event |
+| `NOT_READY` | `submit()` was called before every field loaded. Wait for the `ready` event (see also the Firefox note below) |
+| `SUBMIT_IN_PROGRESS` | `submit()` or `confirmDcc()` was called while a previous request is still in progress |
+| `TRANSACTION_NOT_LOADED` | The transaction couldn't be loaded, e.g. an invalid or expired token |
+| `GATEWAY_NOT_FOUND` | The token has no card gateway, or the `gatewayCode` passed doesn't exist |
+| `INVALID_INSTALLMENT` | The `installment` passed isn't one of `getInstallments()` |
+| `USER_DATA_REQUIRED` | A field from `getRequiredUserData()` is missing. `result.messages.fields` lists them |
+| `DCC_EXPIRED` | The DCC quote expired or the attempt is no longer valid. Call `submit()` again |
+| `DCC_INVALID_CURRENCY` | The currency passed to `confirmDcc()` isn't one of the options. Choose another |
+| `DCC_NOT_PENDING` | `confirmDcc()` was called without a pending DCC quote |
+| `DESTROYED` | `destroy()` was called while a payment was pending, or `submit()`/`confirmDcc()` was called after `destroy()` |
+| `UNKNOWN_ERROR` | The payment failed without a specific code |
+
+Any other value is the error code returned by the ZRU API when the payment is rejected, with the details in `result.messages`.
+
+#### Referrer policy
+
+Firefox tells the fields which page contains them through the referrer. zru-js creates the iframes with `referrerpolicy="origin"`, so only your origin is sent, even if your page sets `Referrer-Policy: no-referrer`. Don't remove that attribute: without it the fields can't talk to your page in Firefox and `submit()` returns `NOT_READY`.
+
+#### Allowed domains
+
+You can limit which pages may embed the ZRU checkout, both the card fields and the full checkout in an iframe, by adding your domains to the allowed domains of each environment in the ZRU panel. Each entry is a full origin, such as `https://shop.com` (with the port if it isn't the default one), or a subdomain wildcard, such as `https://*.shop.com`, which doesn't include `shop.com` itself. If you need both, add both.
+
+- With no domains configured, any page can embed the checkout.
+- In a test environment the page is checked but never blocked: if it isn't allowed, the browser console shows a warning. Use it to check your list before going live.
+- Payment links, redirects and popups aren't checked: the browser shows the ZRU domain in the address bar.
+
+When the page isn't allowed, the card fields fire `unavailable` with `status: 'domain_not_allowed'`, and the full checkout shows a "payment unavailable" message and posts `ZRU_DOMAIN_NOT_ALLOWED` to your page. The browser console shows the origin that was detected, which is the one to add.
+
+### Apple Pay
+
+Apple Pay works in Safari and, with the Apple Pay JS SDK, in other browsers such as Chrome, Edge or Firefox, where the customer completes the payment with their iPhone. `loadApplePay()` loads the SDK and resolves with whether Apple Pay can be used, so you know when to show the button:
+
+```HTML
+<!-- Apple Pay JS SDK button, hidden until loadApplePay() resolves -->
+<apple-pay-button id="apple-pay" buttonstyle="black" type="plain" locale="en-US" style="display: none;"></apple-pay-button>
+```
+
+```javascript
+zru.loadApplePay().then(function (canUseApplePay) {
+  if (canUseApplePay) {
+    document.getElementById('apple-pay').style.display = 'inline-block';
+  }
+});
+
+document.getElementById('apple-pay').addEventListener('click', function () {
+  // Start the payment from the click: browsers only open the Apple Pay sheet after a user action
+  zru.startApplePay().then(function (result) {
+    // result.success, or result.error and result.messages
+  });
+});
+```
+
+If the SDK can't be loaded (for example, blocked by a content security policy), `zru.applePaySdkLoaded` is `false` and `<apple-pay-button>` isn't available. Apple Pay still works in Safari: show a button styled with `-webkit-appearance: -apple-pay-button` instead, as in `test/test.html`.
+
+`canUseApplePay()` returns the same value synchronously once `loadApplePay()` has resolved. When `startApplePay()` is called in a browser without Apple Pay, it resolves with `{ success: false, error: 'APPLE_PAY_NOT_AVAILABLE' }`.
 
 ### More information
 

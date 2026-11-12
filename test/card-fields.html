@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Example ZRU JS Card Fields</title>
+    <!-- Import the ZRU library -->
+    <script src="../src/zru.js"></script>
+    <style>
+        /* The merchant owns the design: labels, borders and errors live on this page */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 360px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            margin: 12px 0 4px;
+        }
+
+        .field {
+            height: 44px;
+            padding: 0 12px;
+            border: 1px solid #dce0eb;
+            border-radius: 8px;
+            transition: border-color .15s, box-shadow .15s;
+        }
+
+        .field.is-focused {
+            border-color: #5b5bd6;
+            box-shadow: 0 0 0 3px rgba(91, 91, 214, .15);
+        }
+
+        .field.is-invalid {
+            border-color: #d32f2f;
+        }
+
+        .row {
+            display: flex;
+            gap: 12px;
+        }
+
+        .row>div {
+            flex: 1;
+        }
+
+        .error {
+            color: #d32f2f;
+            font-size: 12px;
+            min-height: 16px;
+        }
+
+        #pay-btn {
+            margin-top: 16px;
+            width: 100%;
+            height: 44px;
+            border: none;
+            border-radius: 8px;
+            background: #5b5bd6;
+            color: #fff;
+            font-size: 15px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Containers where the ZRU card field iframes are mounted -->
+    <label for="zru-number">Card number</label>
+    <div id="zru-number" class="field"></div>
+    <div id="number-error" class="error"></div>
+
+    <div class="row">
+        <div>
+            <label for="zru-expiry">Expiry</label>
+            <div id="zru-expiry" class="field"></div>
+            <div id="expiry-error" class="error"></div>
+        </div>
+        <div>
+            <label for="zru-cvc">CVC</label>
+            <div id="zru-cvc" class="field"></div>
+            <div id="cvc-error" class="error"></div>
+        </div>
+    </div>
+
+    <label for="zru-name">Cardholder name</label>
+    <div id="zru-name" class="field"></div>
+    <div id="name-error" class="error"></div>
+
+    <!-- Installments and user data: shown only when the token needs them -->
+    <div id="installments-block" style="display: none">
+        <label for="installments">Installments</label>
+        <select id="installments">
+            <option value="">No</option>
+        </select>
+    </div>
+    <div id="user-data"></div>
+
+    <!-- Enabled once every field has loaded (ready event) -->
+    <button id="pay-btn" disabled>Pay</button>
+
+    <!-- DCC: rendered by the merchant -->
+    <div id="dcc" style="display: none">
+        <p>Choose the currency to pay in:</p>
+        <div id="dcc-options"></div>
+        <button id="dcc-confirm" disabled>Confirm</button>
+    </div>
+
+    <pre id="result"></pre>
+    <!-- zru-js puts the bank's 3DS form here and submits it -->
+    <div id="zru-html-div" style="display: none"></div>
+
+    <script>
+        var zru = new ZRU('3992bbb4be93'); // Public key
+        zru.setToken('TOKEN');
+
+        var fields = zru.createCardFields({
+            fields: {
+                number: '#zru-number',
+                expiry: '#zru-expiry',
+                cvc: '#zru-cvc',
+                name: '#zru-name',
+            }
+        });
+
+        function container(field) {
+            return document.getElementById('zru-' + field);
+        }
+
+        fields.on('change', function (event) {
+            container(event.field).classList.toggle('is-invalid', !event.valid);
+            document.getElementById(event.field + '-error').textContent = event.valid ? '' : event.error;
+        });
+        fields.on('focus', function (event) {
+            container(event.field).classList.add('is-focused');
+        });
+        fields.on('blur', function (event) {
+            container(event.field).classList.remove('is-focused');
+        });
+        var unavailable = false;
+        fields.on('ready', function () {
+            document.getElementById('pay-btn').disabled = unavailable;
+        });
+        fields.on('unavailable', function (event) {
+            var messages = {
+                done: 'This payment has already been made.',
+                expired: 'This payment link has expired.',
+                cancelled: 'This payment was cancelled.',
+                not_found: 'This payment link is not valid.',
+                // This page's origin isn't in the allowed domains (see the browser console)
+                domain_not_allowed: 'This payment can\'t be made from this page.'
+            };
+            unavailable = true;
+            document.getElementById('result').textContent = messages[event.status] || 'This payment is not available.';
+            document.getElementById('pay-btn').disabled = true;
+        });
+
+        function showResult(result) {
+            document.getElementById('result').textContent = JSON.stringify(result, null, 2);
+            document.getElementById('dcc').style.display = result.dcc ? 'block' : 'none';
+            if (result.threeDS) {
+                document.getElementById('result').textContent = 'Redirecting to your bank...';
+            }
+            if (result.dcc) {
+                showDcc(result.dcc);
+            }
+        }
+
+        // Both amounts, exchange rate and markup, with no option preselected
+        function showDcc(dcc) {
+            var options = dcc.offered.map(function (offer) {
+                return {
+                    currency: offer.currency,
+                    text: offer.amount + ' ' + offer.currency + ' (1 ' + dcc.original.currency + ' = ' + offer.exchange_rate + ' ' + offer.currency + ', markup ' + (offer.markup * 100) + '%)'
+                };
+            }).concat({currency: dcc.original.currency, text: dcc.original.amount + ' ' + dcc.original.currency + ' (no conversion)'});
+
+            var container = document.getElementById('dcc-options');
+            container.innerHTML = '';
+            options.forEach(function (option) {
+                var label = document.createElement('label');
+                var radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.name = 'dcc-currency';
+                radio.value = option.currency;
+                radio.onchange = function () {
+                    document.getElementById('dcc-confirm').disabled = false;
+                };
+                label.appendChild(radio);
+                label.appendChild(document.createTextNode(' ' + option.text));
+                container.appendChild(label);
+            });
+            document.getElementById('dcc-confirm').disabled = true;
+        }
+
+        zru.getInstallments().forEach(function (installment) {
+            var option = document.createElement('option');
+            option.value = installment;
+            option.textContent = installment;
+            document.getElementById('installments').appendChild(option);
+            document.getElementById('installments-block').style.display = 'block';
+        });
+
+        zru.getRequiredUserData().forEach(function (field) {
+            var label = document.createElement('label');
+            label.textContent = field;
+            var input = document.createElement('input');
+            input.name = field;
+            input.className = 'user-data-input';
+            document.getElementById('user-data').appendChild(label);
+            document.getElementById('user-data').appendChild(input);
+        });
+
+        document.getElementById('pay-btn').addEventListener('click', function () {
+            var data = {};
+            document.querySelectorAll('.user-data-input').forEach(function (input) {
+                data[input.name] = input.value;
+            });
+            fields.submit({
+                installment: document.getElementById('installments').value || undefined,
+                data: data
+            }).then(showResult);
+        });
+
+        document.getElementById('dcc-confirm').addEventListener('click', function () {
+            var selected = document.querySelector('input[name="dcc-currency"]:checked');
+            fields.confirmDcc(selected.value).then(showResult);
+        });
+    </script>
+</body>
+
+</html>
