@@ -113,15 +113,7 @@
     <div id="zru-html-div" style="display: none"></div>
 
     <script>
-        var zru = new ZRU(
-            '3992bbb4be93', // Public key
-            {
-                // Point to a local checkout while developing, e.g. 'http://localhost:4213/'
-                // payUrl: 'http://localhost:4213/',
-                // API used by setToken; must be the same one the checkout points to
-                // apiUrl: 'http://localhost:8000/v1/',
-            }
-        );
+        var zru = new ZRU('3992bbb4be93'); // Public key
         zru.setToken('TOKEN');
 
         var fields = zru.createCardFields({

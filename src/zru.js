@@ -7,10 +7,9 @@
 
   var ZRU = function(publicKey, customOptions) {
     this.publicKey = publicKey;
-    this.PAY_URL = (customOptions && customOptions.payUrl) || 'https://checkout.zrupay.com/';
-    // event.origin never has a trailing slash
-    this.PAY_ORIGIN = this.PAY_URL.replace(/\/$/, '');
-    this.BASE_API_URL = (customOptions && customOptions.apiUrl) || 'https://api.zrupay.com/v1/';
+    this.PAY_URL = 'https://checkout.zrupay.com/';
+    // The checkout origin as event.origin reports it, without a trailing slash
+    this.PAY_ORIGIN = 'https://checkout.zrupay.com';
     this.token = null;
     this.tokenInfo = null;
     this.tokenCardGateway = null;
@@ -58,7 +57,7 @@
   };
 
   ZRU.prototype.__defineUrls = function (token) {
-    this.API_URL = this.BASE_API_URL + 'pay/' + this.token + '/';
+    this.API_URL = 'https://api.zrupay.com/v1/pay/' + this.token + '/';
     this.API_HTML_URL = this.API_URL + 'html/';
     this.API_CARD_URL = this.API_URL + 'card/';
     this.REDIRECT_URL = this.PAY_URL + this.token + '/redirect/';
