@@ -81,11 +81,11 @@
 
         <!-- Div and iframe used by the ZRU library -->
         <div id="zru-html-div" style="display: none"></div>
-        <iframe src="" frameborder="0" id="zru-iframe" style="display: none; width: 100%; height: 600px;"></iframe>
+        <iframe src="" frameborder="0" id="zru-iframe" allow="payment *" sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation allow-popups-to-escape-sandbox" style="display: none; width: 100%; height: 600px;"></iframe>
 
         <script>
             var zru = new ZRU(
-                '3992bbb4be93', // Public key
+                'PUBLIC KEY', // Public key
                 {
                     iframeId: 'zru-iframe', // Default is 'zru-iframe'. ID of the iframe where the payment page will load, required if you choose the iframe option for apmOpenType or have a card payment option
                     htmlDivId: 'zru-html-div', // Default is 'zru-html-div'. ID of the div where the payment form will load if you choose the html option for apmOpenType
@@ -114,7 +114,7 @@
             );
 
             // Set the transaction, subscription, or authorization token to be used in this payment session.
-            zru.setToken('ed83895d7ed24720aed773a0881368df');
+            zru.setToken('TOKEN');
 
             // Load the Apple Pay JS SDK, which adds Apple Pay to browsers other than Safari, and show
             // the button only if Apple Pay can be used. Without the SDK, Safari falls back to its own button.

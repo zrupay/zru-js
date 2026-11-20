@@ -364,6 +364,11 @@
       iframe.style.border = 'none';
       iframe.setAttribute('frameborder', '0');
       iframe.setAttribute('scrolling', 'no');
+      iframe.setAttribute('allow', 'payment *');
+      iframe.setAttribute(
+        'sandbox',
+        'allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation allow-popups-to-escape-sandbox'
+      );
 
       container.appendChild(iframe);
       iframes[field] = iframe;

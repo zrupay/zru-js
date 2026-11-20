@@ -15,7 +15,7 @@
   "author": "ZRU",
   "repository": {
     "type": "git",
-    "url": "git://github.com/zrupay/zru-js.git"
+    "url": "git+https://github.com/zrupay/zru-js.git"
   },
   "bugs": "https://github.com/zrupay/zru-js/issues",
   "main": "dist/zru.min.js",
